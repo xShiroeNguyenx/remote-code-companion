@@ -31,10 +31,32 @@ Marketplace and be owned by an Azure DevOps organisation you control:
 
 In Azure DevOps → **User settings → Personal Access Tokens → New Token**:
 
-- Organization: **All accessible organizations** — not a single one, or publishing
-  fails with a confusing 401.
-- Scopes: **Custom defined** → **Marketplace → Manage**.
+- Organization: **All accessible organizations** — a single organisation makes
+  publishing fail with a confusing 401, because the Marketplace is not owned by any
+  one organisation.
+- Scopes: the list shown by default does **not** include Marketplace. Click
+  **Show all scopes** at the bottom, then tick **Marketplace → Manage**.
 - Expiry: whatever you will remember to rotate; a year is the maximum.
+
+> **Deadline: 1 December 2026.** Azure DevOps is retiring PATs scoped to *all
+> accessible organizations* — exactly the scope publishing needs today. After that
+> date this token stops working and `vsce publish` will fail on authentication.
+>
+> The replacement is Microsoft Entra ID rather than a token: `vsce publish
+> --azure-credential` authenticates as a service principal or managed identity, with
+> no secret to rotate. Worth switching to before the deadline rather than during a
+> release. Check what Azure DevOps says on the Personal Access Tokens page — the
+> banner there is the authoritative notice.
+
+An expired token is the failure you will hit again: publishing stops with
+`The Personal Access Token used has expired`. The release workflow now checks the
+token with `vsce verify-pat` before running anything else, so it says so in seconds
+rather than after a full build. Fix it by creating a new token and updating the
+`VSCE_PAT` secret — nothing else changes.
+
+A token that seems to have vanished from the Personal Access Tokens page is usually
+still there: the page filters to `Status: Active` and to one organisation by default,
+which hides both expired tokens and globally scoped ones.
 
 Copy the token once — it is never shown again.
 
