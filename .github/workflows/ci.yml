@@ -1,0 +1,89 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        # Windows is where most users are; Linux is where the release is built.
+        os: [ubuntu-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Compile
+        run: npm run compile
+
+      - name: Unit + smoke tests
+        run: npm test
+
+      # Spins up ftp-srv and an in-process ssh2 server on 127.0.0.1
+      # (control 21721/21722, passive data 21800-21900) and drives the real
+      # connection layer against them. No credentials, no external host.
+      - name: Integration tests (in-process FTP + SFTP)
+        run: npm run test:integration
+
+  package:
+    name: package
+    runs-on: ubuntu-latest
+    needs: test
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Compile
+        run: npm run compile
+
+      # Guards the two failures that only appear on a user's machine:
+      # a runtime dependency missing from the vsix, or a native binding in it.
+      - name: Verify package contents
+        run: npm run verify:package
+
+      # Requiring the packaged tree catches a dependency that resolves locally
+      # but is excluded from the vsix — the failure users see and we do not.
+      - name: Verify the packaged tree can load
+        run: npm run verify:runtime
+
+      - name: Build vsix
+        run: npx vsce package --allow-missing-repository --out remote-code-companion-ci.vsix
+
+      - name: Upload vsix
+        uses: actions/upload-artifact@v4
+        with:
+          name: remote-code-companion-vsix
+          path: remote-code-companion-ci.vsix
+          retention-days: 14

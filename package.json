@@ -1,0 +1,583 @@
+{
+  "name": "remote-code-companion",
+  "displayName": "Remote Code Companion",
+  "description": "Edit files directly on production servers (WordPress on shared hosting) over FTP, FTPS, or SFTP — with backup, diff, and confirmation safety nets.",
+  "version": "0.4.0",
+  "publisher": "shiroenguyen",
+  "license": "MIT",
+  "icon": "media/icon.png",
+  "galleryBanner": {
+    "color": "#0E2439",
+    "theme": "dark"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "ftp",
+    "sftp",
+    "ftps",
+    "remote",
+    "wordpress",
+    "shared hosting",
+    "production"
+  ],
+  "main": "./out/extension.js",
+  "activationEvents": [
+    "workspaceContains:.rcc/config.json",
+    "onFileSystem:rcc"
+  ],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "remoteCodeCompanion",
+          "title": "Remote Code Companion",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "remoteCodeCompanion": [
+        {
+          "id": "remoteCodeCompanion.explorer",
+          "name": "Remote",
+          "when": "rcc.hasRemote"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "remoteCodeCompanion.setUpRemote",
+        "title": "Set Up Remote for This Folder",
+        "category": "Remote Code Companion",
+        "icon": "$(add)"
+      },
+      {
+        "command": "remoteCodeCompanion.openSettings",
+        "title": "Settings",
+        "category": "Remote Code Companion",
+        "icon": "$(settings-gear)"
+      },
+      {
+        "command": "remoteCodeCompanion.disableRemote",
+        "title": "Disable Remote for This Folder",
+        "category": "Remote Code Companion"
+      },
+      {
+        "command": "remoteCodeCompanion.regenerateRemoteId",
+        "title": "Generate a New Remote Id",
+        "category": "Remote Code Companion"
+      },
+      {
+        "command": "remoteCodeCompanion.connect",
+        "title": "Connect",
+        "category": "Remote Code Companion"
+      },
+      {
+        "command": "remoteCodeCompanion.disconnect",
+        "title": "Disconnect",
+        "category": "Remote Code Companion"
+      },
+      {
+        "command": "remoteCodeCompanion.refresh",
+        "title": "Refresh",
+        "category": "Remote Code Companion",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "remoteCodeCompanion.openFile",
+        "title": "Open Remote File",
+        "category": "Remote Code Companion"
+      },
+      {
+        "command": "remoteCodeCompanion.diffWithServer",
+        "title": "Diff with Server",
+        "category": "Remote Code Companion",
+        "icon": "$(compare-changes)"
+      },
+      {
+        "command": "remoteCodeCompanion.downloadFile",
+        "title": "Download...",
+        "category": "Remote Code Companion"
+      },
+      {
+        "command": "remoteCodeCompanion.uploadFileHere",
+        "title": "Upload File Here...",
+        "category": "Remote Code Companion"
+      },
+      {
+        "command": "remoteCodeCompanion.newFile",
+        "title": "New File",
+        "category": "Remote Code Companion"
+      },
+      {
+        "command": "remoteCodeCompanion.newFolder",
+        "title": "New Folder",
+        "category": "Remote Code Companion"
+      },
+      {
+        "command": "remoteCodeCompanion.rename",
+        "title": "Rename",
+        "category": "Remote Code Companion"
+      },
+      {
+        "command": "remoteCodeCompanion.delete",
+        "title": "Delete",
+        "category": "Remote Code Companion"
+      },
+      {
+        "command": "remoteCodeCompanion.copyRemotePath",
+        "title": "Copy Remote Path",
+        "category": "Remote Code Companion"
+      },
+      {
+        "command": "remoteCodeCompanion.pull",
+        "title": "Pull from Server...",
+        "category": "Remote Code Companion",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "remoteCodeCompanion.push",
+        "title": "Push Changes...",
+        "category": "Remote Code Companion",
+        "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "remoteCodeCompanion.syncStatus",
+        "title": "Sync Status",
+        "category": "Remote Code Companion"
+      },
+      {
+        "command": "remoteCodeCompanion.resolveConflicts",
+        "title": "Resolve Conflicts",
+        "category": "Remote Code Companion"
+      },
+      {
+        "command": "remoteCodeCompanion.browseBackups",
+        "title": "Browse Backups",
+        "category": "Remote Code Companion"
+      },
+      {
+        "command": "remoteCodeCompanion.restoreLatestBackup",
+        "title": "Restore Latest Backup",
+        "category": "Remote Code Companion"
+      },
+      {
+        "command": "remoteCodeCompanion.exportRemoteConfig",
+        "title": "Export Remote Config",
+        "category": "Remote Code Companion"
+      },
+      {
+        "command": "remoteCodeCompanion.importRemoteConfig",
+        "title": "Import Remote Config",
+        "category": "Remote Code Companion"
+      },
+      {
+        "command": "remoteCodeCompanion.showOutput",
+        "title": "Show Output Log",
+        "category": "Remote Code Companion"
+      },
+      {
+        "command": "remoteCodeCompanion.startPreview",
+        "title": "Start Local Preview",
+        "category": "Remote Code Companion",
+        "icon": "$(browser)"
+      },
+      {
+        "command": "remoteCodeCompanion.cloneProductionData",
+        "title": "Copy Production Data for Preview",
+        "category": "Remote Code Companion",
+        "icon": "$(database)"
+      },
+      {
+        "command": "remoteCodeCompanion.openPreview",
+        "title": "Open Local Preview",
+        "category": "Remote Code Companion"
+      },
+      {
+        "command": "remoteCodeCompanion.stopPreview",
+        "title": "Stop Local Preview",
+        "category": "Remote Code Companion"
+      },
+      {
+        "command": "remoteCodeCompanion.resetPreview",
+        "title": "Reset Local Preview Site",
+        "category": "Remote Code Companion"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "remoteCodeCompanion.setUpRemote",
+          "when": "view == remoteCodeCompanion.explorer",
+          "group": "navigation@1"
+        },
+        {
+          "command": "remoteCodeCompanion.pull",
+          "when": "view == remoteCodeCompanion.explorer",
+          "group": "navigation@2"
+        },
+        {
+          "command": "remoteCodeCompanion.push",
+          "when": "view == remoteCodeCompanion.explorer",
+          "group": "navigation@3"
+        },
+        {
+          "command": "remoteCodeCompanion.refresh",
+          "when": "view == remoteCodeCompanion.explorer",
+          "group": "navigation@4"
+        },
+        {
+          "command": "remoteCodeCompanion.syncStatus",
+          "when": "view == remoteCodeCompanion.explorer",
+          "group": "1_sync@1"
+        },
+        {
+          "command": "remoteCodeCompanion.resolveConflicts",
+          "when": "view == remoteCodeCompanion.explorer",
+          "group": "1_sync@2"
+        },
+        {
+          "command": "remoteCodeCompanion.browseBackups",
+          "when": "view == remoteCodeCompanion.explorer",
+          "group": "1_backups@1"
+        },
+        {
+          "command": "remoteCodeCompanion.exportRemoteConfig",
+          "when": "view == remoteCodeCompanion.explorer",
+          "group": "2_config@1"
+        },
+        {
+          "command": "remoteCodeCompanion.importRemoteConfig",
+          "when": "view == remoteCodeCompanion.explorer",
+          "group": "2_config@2"
+        },
+        {
+          "command": "remoteCodeCompanion.openSettings",
+          "when": "view == remoteCodeCompanion.explorer",
+          "group": "navigation@5"
+        },
+        {
+          "command": "remoteCodeCompanion.startPreview",
+          "when": "view == remoteCodeCompanion.explorer",
+          "group": "1_sync@3"
+        },
+        {
+          "command": "remoteCodeCompanion.cloneProductionData",
+          "when": "view == remoteCodeCompanion.explorer",
+          "group": "1_sync@4"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "remoteCodeCompanion.connect",
+          "when": "view == remoteCodeCompanion.explorer && viewItem == rcc.profile.disconnected",
+          "group": "1_connection@1"
+        },
+        {
+          "command": "remoteCodeCompanion.disconnect",
+          "when": "view == remoteCodeCompanion.explorer && viewItem == rcc.profile.connected",
+          "group": "1_connection@1"
+        },
+        {
+          "command": "remoteCodeCompanion.exportRemoteConfig",
+          "when": "view == remoteCodeCompanion.explorer && viewItem =~ /^rcc\\.profile/",
+          "group": "2_manage@2"
+        },
+        {
+          "command": "remoteCodeCompanion.disableRemote",
+          "when": "view == remoteCodeCompanion.explorer && viewItem =~ /^rcc\\.profile/",
+          "group": "9_danger@1"
+        },
+        {
+          "command": "remoteCodeCompanion.newFile",
+          "when": "view == remoteCodeCompanion.explorer && viewItem =~ /^rcc\\.(dir|profile)/",
+          "group": "3_mutate@1"
+        },
+        {
+          "command": "remoteCodeCompanion.newFolder",
+          "when": "view == remoteCodeCompanion.explorer && viewItem =~ /^rcc\\.(dir|profile)/",
+          "group": "3_mutate@2"
+        },
+        {
+          "command": "remoteCodeCompanion.uploadFileHere",
+          "when": "view == remoteCodeCompanion.explorer && viewItem =~ /^rcc\\.(dir|profile)/",
+          "group": "4_transfer@1"
+        },
+        {
+          "command": "remoteCodeCompanion.pull",
+          "when": "view == remoteCodeCompanion.explorer && viewItem =~ /^rcc\\.(dir|profile)/",
+          "group": "4_transfer@2"
+        },
+        {
+          "command": "remoteCodeCompanion.push",
+          "when": "view == remoteCodeCompanion.explorer && viewItem =~ /^rcc\\.profile/",
+          "group": "4_transfer@3"
+        },
+        {
+          "command": "remoteCodeCompanion.syncStatus",
+          "when": "view == remoteCodeCompanion.explorer && viewItem =~ /^rcc\\.profile/",
+          "group": "4_transfer@4"
+        },
+        {
+          "command": "remoteCodeCompanion.diffWithServer",
+          "when": "view == remoteCodeCompanion.explorer && viewItem == rcc.file",
+          "group": "1_open@2"
+        },
+        {
+          "command": "remoteCodeCompanion.downloadFile",
+          "when": "view == remoteCodeCompanion.explorer && viewItem == rcc.file",
+          "group": "4_transfer@1"
+        },
+        {
+          "command": "remoteCodeCompanion.rename",
+          "when": "view == remoteCodeCompanion.explorer && viewItem =~ /^rcc\\.(dir|file)/",
+          "group": "3_mutate@3"
+        },
+        {
+          "command": "remoteCodeCompanion.copyRemotePath",
+          "when": "view == remoteCodeCompanion.explorer && viewItem =~ /^rcc\\.(dir|file)/",
+          "group": "5_path@1"
+        },
+        {
+          "command": "remoteCodeCompanion.refresh",
+          "when": "view == remoteCodeCompanion.explorer && viewItem =~ /^rcc\\.(dir|profile)/",
+          "group": "5_path@2"
+        },
+        {
+          "command": "remoteCodeCompanion.delete",
+          "when": "view == remoteCodeCompanion.explorer && viewItem =~ /^rcc\\.(dir|file)/",
+          "group": "9_danger@1"
+        },
+        {
+          "command": "remoteCodeCompanion.openSettings",
+          "when": "view == remoteCodeCompanion.explorer && viewItem =~ /^rcc.profile/",
+          "group": "2_manage@1"
+        },
+        {
+          "command": "remoteCodeCompanion.startPreview",
+          "when": "view == remoteCodeCompanion.explorer && viewItem =~ /^rcc.profile/",
+          "group": "4_transfer@5"
+        },
+        {
+          "command": "remoteCodeCompanion.cloneProductionData",
+          "when": "view == remoteCodeCompanion.explorer && viewItem =~ /^rcc.profile/",
+          "group": "4_transfer@6"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "remoteCodeCompanion.diffWithServer",
+          "when": "resourceScheme == rcc",
+          "group": "navigation"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "remoteCodeCompanion.openFile",
+          "when": "false"
+        },
+        {
+          "command": "remoteCodeCompanion.regenerateRemoteId",
+          "when": "false"
+        },
+        {
+          "command": "remoteCodeCompanion.rename",
+          "when": "false"
+        },
+        {
+          "command": "remoteCodeCompanion.delete",
+          "when": "false"
+        },
+        {
+          "command": "remoteCodeCompanion.copyRemotePath",
+          "when": "false"
+        },
+        {
+          "command": "remoteCodeCompanion.downloadFile",
+          "when": "false"
+        },
+        {
+          "command": "remoteCodeCompanion.uploadFileHere",
+          "when": "false"
+        },
+        {
+          "command": "remoteCodeCompanion.newFile",
+          "when": "false"
+        },
+        {
+          "command": "remoteCodeCompanion.newFolder",
+          "when": "false"
+        },
+        {
+          "command": "remoteCodeCompanion.diffWithServer",
+          "when": "resourceScheme == rcc"
+        },
+        {
+          "command": "remoteCodeCompanion.restoreLatestBackup",
+          "when": "resourceScheme == rcc"
+        },
+        {
+          "command": "remoteCodeCompanion.exportRemoteConfig",
+          "when": "false"
+        },
+        {
+          "command": "remoteCodeCompanion.importRemoteConfig",
+          "when": "false"
+        },
+        {
+          "command": "remoteCodeCompanion.disableRemote",
+          "when": "false"
+        },
+        {
+          "command": "remoteCodeCompanion.resetPreview",
+          "when": "false"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Remote Code Companion",
+      "properties": {
+        "remoteCodeCompanion.confirmOnSave": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show a confirmation dialog before uploading a saved file to the server. Can be overridden per server profile."
+        },
+        "remoteCodeCompanion.conflictCheck": {
+          "type": "boolean",
+          "default": true,
+          "description": "Before overwriting, check whether the file changed on the server since you opened it."
+        },
+        "remoteCodeCompanion.backup.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Download the current server version of a file into a local backup before overwriting or deleting it. Can be overridden per server profile."
+        },
+        "remoteCodeCompanion.backup.required": {
+          "type": "boolean",
+          "default": true,
+          "description": "Treat a failed backup as a hard stop: ask before saving anyway."
+        },
+        "remoteCodeCompanion.backup.maxPerFile": {
+          "type": "number",
+          "default": 10,
+          "minimum": 1,
+          "description": "Maximum number of backups kept per remote file. Older backups are pruned."
+        },
+        "remoteCodeCompanion.backup.maxAgeDays": {
+          "type": "number",
+          "default": 30,
+          "minimum": 1,
+          "description": "Backups older than this many days are pruned."
+        },
+        "remoteCodeCompanion.connection.idleTimeoutSeconds": {
+          "type": "number",
+          "default": 300,
+          "minimum": 30,
+          "description": "Close the server connection after this many seconds of inactivity."
+        },
+        "remoteCodeCompanion.maxFileSizeMB": {
+          "type": "number",
+          "default": 10,
+          "minimum": 1,
+          "description": "Refuse to open remote files larger than this (use Download instead)."
+        },
+        "remoteCodeCompanion.tree.excludes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "**/wp-content/cache/**",
+            "**/node_modules/**",
+            "**/.git/**"
+          ],
+          "description": "Glob patterns hidden from the server tree (they still exist on the server)."
+        },
+        "remoteCodeCompanion.wordpress.warnCriticalFiles": {
+          "type": "boolean",
+          "default": true,
+          "description": "Always ask for confirmation before uploading critical WordPress files (wp-config.php, .htaccess), even when confirm-on-save is off."
+        },
+        "remoteCodeCompanion.sync.verifyByHash": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "always",
+            "never"
+          ],
+          "default": "auto",
+          "enumDescriptions": [
+            "Download and hash the server copy only when its timestamp cannot be trusted and the file also changed locally — the case where a wrong answer would hide or invent a conflict.",
+            "Always hash the server copy. Most accurate, most bandwidth.",
+            "Never hash; rely on size and timestamps only. Unsafe on plain FTP servers without MDTM support."
+          ],
+          "description": "How thoroughly to verify whether a file changed on the server before syncing."
+        },
+        "remoteCodeCompanion.sync.warnOnFirstLocalSave": {
+          "type": "boolean",
+          "default": true,
+          "description": "Explain once that saving a pulled file writes to disk only, and reaches the server when you push."
+        },
+        "remoteCodeCompanion.sync.pullDelayMs": {
+          "type": "number",
+          "default": 100,
+          "minimum": 0,
+          "maximum": 5000,
+          "description": "Pause between file transfers during a pull, in milliseconds. Every FTP transfer opens a new passive data connection, and shared hosts often block an IP that opens a rapid burst of them. Raise this if a pull keeps failing with \"Can't open data connection\"; 0 disables it (fine for SFTP)."
+        },
+        "remoteCodeCompanion.php.lintBeforePush": {
+          "type": "boolean",
+          "default": true,
+          "description": "Run \"php -l\" on the PHP files a push would upload, and block the push if any of them has a syntax error. A parse error takes a whole WordPress site down, so this is checked locally first. Requires PHP on the machine; skipped with a notice if none is found."
+        },
+        "remoteCodeCompanion.php.path": {
+          "type": "string",
+          "default": "",
+          "description": "Path to a PHP executable. Leave empty to find one automatically (PATH, then XAMPP/Laragon/WAMP and the usual Unix locations). PHP is always run with -n, so a broken php.ini on this machine cannot affect the result."
+        },
+        "remoteCodeCompanion.mysql.binDir": {
+          "type": "string",
+          "default": "",
+          "description": "Folder containing mysqld/mysql, used only for the local preview database. Leave empty to look in the usual places (XAMPP, Laragon, WAMP, MariaDB, MySQL, and the standard Unix paths). The extension runs its own instance on a private port with its own data directory; it never uses or modifies a server you already run."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts",
+    "test": "npm run compile && node ./scripts/smoke-test.js && node ./scripts/unit-test.js",
+    "test:integration": "npm run compile && node ./scripts/integration-test.js && node ./scripts/integration-sync-test.js",
+    "verify:package": "node ./scripts/verify-package.js",
+    "package": "npm run compile && npm run verify:package && npm run verify:runtime && vsce package --allow-missing-repository",
+    "test:preview": "npm run compile && node ./scripts/integration-preview-test.js",
+    "test:mysql": "npm run compile && node ./scripts/integration-mysql-test.js",
+    "verify:runtime": "node ./scripts/verify-runtime.js",
+    "ovsx:namespace": "npx ovsx create-namespace shiroenguyen",
+    "publish:ovsx": "node ./scripts/publish-ovsx.js"
+  },
+  "dependencies": {
+    "basic-ftp": "^5.0.5",
+    "ssh2": "^1.17.0",
+    "ssh2-sftp-client": "^10.0.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/ssh2-sftp-client": "^9.0.4",
+    "@types/vscode": "1.85.0",
+    "@typescript-eslint/eslint-plugin": "^7.18.0",
+    "@typescript-eslint/parser": "^7.18.0",
+    "@vscode/vsce": "^2.32.0",
+    "eslint": "^8.57.1",
+    "ftp-srv": "^4.6.3",
+    "ovsx": "^1.1.1",
+    "typescript": "~5.4.5"
+  }
+}
