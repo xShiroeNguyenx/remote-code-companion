@@ -2,7 +2,7 @@
   "name": "remote-code-companion",
   "displayName": "Remote Code Companion",
   "description": "Edit files directly on production servers (WordPress on shared hosting) over FTP, FTPS, or SFTP — with backup, diff, and confirmation safety nets.",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "publisher": "shiroenguyen",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -145,6 +145,17 @@
         "title": "Push Changes...",
         "category": "Remote Code Companion",
         "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "remoteCodeCompanion.uploadToServer",
+        "title": "Upload to Server",
+        "category": "Remote Code Companion",
+        "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "remoteCodeCompanion.uploadFolderToServer",
+        "title": "Upload Changed Files in This Folder",
+        "category": "Remote Code Companion"
       },
       {
         "command": "remoteCodeCompanion.syncStatus",
@@ -436,6 +447,36 @@
         {
           "command": "remoteCodeCompanion.resetPreview",
           "when": "false"
+        },
+        {
+          "command": "remoteCodeCompanion.uploadFolderToServer",
+          "when": "false"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "remoteCodeCompanion.uploadToServer",
+          "when": "rcc.hasRemote && resourceScheme == file && !explorerResourceIsFolder",
+          "group": "navigation@100"
+        },
+        {
+          "command": "remoteCodeCompanion.uploadFolderToServer",
+          "when": "rcc.hasRemote && resourceScheme == file && explorerResourceIsFolder",
+          "group": "navigation@100"
+        }
+      ],
+      "editor/title/context": [
+        {
+          "command": "remoteCodeCompanion.uploadToServer",
+          "when": "rcc.hasRemote && resourceScheme == file",
+          "group": "1_rcc@1"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "remoteCodeCompanion.uploadToServer",
+          "when": "rcc.hasRemote && resourceScheme == file",
+          "group": "1_modification@100"
         }
       ]
     },
@@ -446,6 +487,19 @@
           "type": "boolean",
           "default": true,
           "description": "Show a confirmation dialog before uploading a saved file to the server. Can be overridden per server profile."
+        },
+        "remoteCodeCompanion.confirm.style": {
+          "type": "string",
+          "enum": [
+            "panel",
+            "modal"
+          ],
+          "default": "panel",
+          "enumDescriptions": [
+            "A styled confirmation panel: the whole remote path, the size, how many lines differ from the server copy, and the state of the backup. It opens as an editor tab, takes focus, and Enter/Esc answer it.",
+            "VS Code's own modal dialog. It blocks the window but shows one ellipsised line of detail."
+          ],
+          "description": "How the confirmation before an upload is shown."
         },
         "remoteCodeCompanion.conflictCheck": {
           "type": "boolean",

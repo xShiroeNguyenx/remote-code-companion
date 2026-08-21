@@ -3,7 +3,7 @@
 Where the extension is, and where it is going. The detailed design behind each
 item lives in `PLAN.md`; this file is the short version, kept honest.
 
-Current release: **0.4.0** — the first one published to the Marketplace; 0.1.0
+Current release: **0.5.0**; 0.4.0 was the first published to the Marketplace, and 0.1.0
 through 0.3.0 were internal builds. Pre-1.0: the save pipeline and the connection
 layer are exercised daily against a real shared host, but the API surface (config
 schema, command ids) may still move between minor versions.
@@ -81,9 +81,33 @@ cannot reach the server.
   the protocol, passive-FTP data connections refused under load, and a dump from
   a newer MariaDB that an older client will not read.
 
+### 0.5.0 — one file, one dialog (M10)
+
+- **Upload to Server** on the right-click menu of a file, its editor tab, or the
+  editor itself. Knowing which file changed is information the user already has,
+  so this asks the server about that file alone instead of comparing the whole
+  mirror first. A folder sends what differs there; identical files are left out.
+- The scan is what is skipped, never a safety step: backup, conflict check,
+  confirmation, upload and verification all still run, and the baseline still
+  advances only for a write the pipeline verified.
+- A conflicted file is no longer relabelled to get it through. It is pushed as
+  what it is, with the conflict stated in the dialog — the decision stays the
+  user's, it is just not a separate question any more.
+- **The confirmation was rebuilt as a styled panel.** The native modal cannot be
+  styled and ellipsises a long remote path to one line — the line that answers
+  "am I overwriting the right file?". The new one shows the whole path, the size
+  against what it replaces, how many lines differ from the server copy, and the
+  state of the backup. Enter uploads, Esc cancels, closing the tab cancels.
+- Three modals in a row (conflict, failed backup, confirm) became one dialog with
+  three rows. Any risky row still forces it to appear with confirmations off.
+- A multi-file or folder upload is confirmed once, listing every file; the
+  pipeline then stops again only where something is actually wrong.
+- `confirm.style: modal` keeps the native dialog for anyone who prefers it, and
+  it gained the full remote path and the same facts.
+
 ## Next
 
-### 0.5.0 — MCP bridge (M8)
+### 0.6.0 — MCP bridge (M8)
 
 Let an AI assistant work on the site without handing it FTP credentials.
 

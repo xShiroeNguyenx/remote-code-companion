@@ -1,5 +1,4 @@
 import * as fs from 'fs';
-import * as path from 'path';
 import * as vscode from 'vscode';
 import { registerBackupCommands } from './backup/backup-commands';
 import { BackupManager } from './backup/backup-manager';
@@ -19,15 +18,17 @@ import { FileStateTracker } from './fs/file-state-tracker';
 import { RemoteContentProvider } from './fs/remote-content-provider';
 import { RemoteFsProvider } from './fs/remote-fs-provider';
 import { log } from './log';
+import { localTarget } from './mirror/local-target';
 import { registerSyncCommands } from './mirror/sync-commands';
 import { SyncEngine } from './mirror/sync-engine';
+import { registerUploadCommands } from './mirror/upload-commands';
 import { registerPreviewCommands } from './preview/preview-commands';
 import { LocalDatabase } from './preview/mysql-server';
 import { PreviewServers } from './preview/preview-server';
 import { ProfileSecrets } from './profiles/profile-secrets';
 import { registerRemoteCommands } from './profiles/remote-commands';
 import { configPathOf, ConfigIssue, RemoteConfigStore } from './profiles/remote-config-store';
-import { RemoteConfig, ServerProfile } from './profiles/types';
+import { ServerProfile } from './profiles/types';
 import { SettingsPanel } from './settings/settings-panel';
 import { SavePipeline } from './save/save-pipeline';
 import { RemoteTreeProvider } from './tree/remote-tree-provider';
@@ -68,7 +69,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     tracker,
     backups,
     logger: log,
-    onUploaded: (fileName) => statusBar.flashUploaded(fileName)
+    onUploaded: (fileName) => statusBar.flashUploaded(fileName),
+    // The dialog's own "stop asking" checkbox: it writes the per-remote
+    // override, so the choice lives with the folder that owns the server
+    // rather than in a setting the user has to go looking for.
+    onSuppressConfirm: (profileId) => suppressConfirm(profileId)
   });
 
   const fsProvider = new RemoteFsProvider({ profiles: store, manager, tracker, pipeline, backups, logger: log });
@@ -84,6 +89,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     store,
     manager,
     tracker,
+    pipeline,
     logger: log,
     onPendingChanged: () => refreshSyncContext()
   });
@@ -135,6 +141,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     await manager.drop(profileId);
     engine.invalidate(profileId);
     await refreshPending();
+  };
+
+  /**
+   * Turn off the upload confirmation for one remote, from the dialog itself.
+   * It is a per-remote override in .rcc/config.json rather than a global
+   * setting: "stop asking about this site" is not "stop asking about every site".
+   */
+  const suppressConfirm = async (profileId: string): Promise<void> => {
+    const folder = store.folderFor(profileId);
+    const current = store.get(profileId);
+    if (!folder || !current) {
+      return;
+    }
+    await store.write(folder, { ...current, confirmOnSave: false });
   };
 
   /** Recompute pending counts without touching the network. */
@@ -189,6 +209,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     ...registerRemoteCommands({ context, store, secrets, manager, logger: log }),
     ...registerTreeCommands({ store, manager, tree, logger: log, onConfigSaved: onRemoteConfigSaved }),
     ...registerSyncCommands({ store, engine, logger: log }),
+    ...registerUploadCommands({ store, engine, logger: log }),
     ...registerPreviewCommands({
       store,
       servers: previews,
@@ -230,26 +251,6 @@ export async function deactivate(): Promise<void> {
   previewDatabaseRef = undefined;
   await managerRef?.disconnectAll();
   managerRef = undefined;
-}
-
-/** Resolve a local file to the remote-enabled folder that owns it, if any. */
-function localTarget(
-  store: RemoteConfigStore,
-  uri: vscode.Uri
-): { config: RemoteConfig; localRelPath: string } | undefined {
-  const folder = vscode.workspace.getWorkspaceFolder(uri);
-  if (!folder) {
-    return undefined;
-  }
-  const config = store.configIn(folder);
-  if (!config) {
-    return undefined;
-  }
-  const rel = path.relative(folder.uri.fsPath, uri.fsPath);
-  if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) {
-    return undefined;
-  }
-  return { config, localRelPath: rel.split(path.sep).join('/') };
 }
 
 /**

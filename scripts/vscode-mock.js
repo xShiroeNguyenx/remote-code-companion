@@ -1,4 +1,6 @@
 'use strict';
+
+const fs = require('fs');
 // Minimal vscode API mock for the smoke test. Only what activate() touches.
 
 class Disposable {
@@ -159,7 +161,7 @@ function createVscodeMock() {
   };
   const mock = {
     __registry: registry,
-    __answer: { info: undefined, warning: undefined, error: undefined, quickPick: undefined, inputBox: undefined },
+    __answer: { info: undefined, warning: undefined, error: undefined, quickPick: undefined, inputBox: undefined, dialog: undefined },
     __config: {},
     version: '1.85.0',
     Disposable,
@@ -191,6 +193,8 @@ function createVscodeMock() {
         return item;
       },
       createWebviewPanel: (viewType, title, _col, _opts) => {
+        const incoming = new EventEmitter();
+        const disposed = new EventEmitter();
         const panel = {
           viewType,
           title,
@@ -201,14 +205,37 @@ function createVscodeMock() {
             options: {},
             asWebviewUri: (u) => u,
             postMessage: async () => true,
-            onDidReceiveMessage: new EventEmitter().event
+            onDidReceiveMessage: incoming.event
           },
-          onDidDispose: new EventEmitter().event,
+          onDidDispose: disposed.event,
           onDidChangeViewState: new EventEmitter().event,
           reveal: () => undefined,
-          dispose: () => undefined
+          __disposed: false,
+          // Test hook: play the user clicking inside the webview.
+          __send: (message) => incoming.fire(message),
+          dispose: () => {
+            if (panel.__disposed) return;
+            panel.__disposed = true;
+            disposed.fire();
+          }
         };
         registry.webviewPanels.push(panel);
+        // The upload confirmation blocks a save until it is answered, so a test
+        // must always answer it: __answer.dialog can be 'upload' / 'diff' /
+        // 'cancel', an object with { answer, suppress }, or a function of the
+        // panel. Leaving it undefined closes the dialog, which reads as a cancel
+        // — the same as a user dismissing it, and never a hang.
+        if (viewType === 'remoteCodeCompanion.uploadConfirm') {
+          const canned = mock.__answer.dialog;
+          const reply = typeof canned === 'function' ? canned(panel) : canned;
+          setImmediate(() => {
+            if (reply === undefined) {
+              panel.dispose();
+            } else {
+              panel.__send(typeof reply === 'string' ? { answer: reply } : reply);
+            }
+          });
+        }
         return panel;
       },
       createTreeView: (id, options) => {
@@ -260,6 +287,7 @@ function createVscodeMock() {
       onDidChangeWorkspaceFolders: new EventEmitter().event,
       onDidSaveTextDocument: new EventEmitter().event,
       workspaceFolders: [],
+      textDocuments: [],
       updateWorkspaceFolders: () => true,
       createFileSystemWatcher: (pattern) => {
         const watcher = {
@@ -285,7 +313,22 @@ function createVscodeMock() {
         },
         stat: async (uri) => {
           const provider = registry.fsProviders.get(uri.scheme);
-          return provider ? provider.stat(uri) : { type: 1, ctime: 0, mtime: 0, size: 0 };
+          if (provider) {
+            return provider.stat(uri);
+          }
+          // Real answers for real paths: code under test asks this to tell a
+          // file from a directory, and a mock that always says "file" would let
+          // a folder-handling bug through.
+          if (uri.scheme === 'file') {
+            const stats = fs.statSync(uri.fsPath);
+            return {
+              type: stats.isDirectory() ? 2 : 1,
+              ctime: stats.ctimeMs,
+              mtime: stats.mtimeMs,
+              size: stats.size
+            };
+          }
+          return { type: 1, ctime: 0, mtime: 0, size: 0 };
         },
         delete: async (uri, options) => {
           const provider = registry.fsProviders.get(uri.scheme);

@@ -19,10 +19,11 @@ The config file holds no secrets — the password lives in the OS keychain — s
 - **FTP / FTPS (explicit & implicit) / SFTP** — covers every shared host.
 - **Remote Explorer tree**: lazy-loads directories on expand; VS Code never crawls or indexes the server.
 - **Pull a theme or plugin into the folder** and work on it as ordinary local code — full-text search, IntelliSense, git, or an AI assistant all just work. **Push Changes** sends it back, file by file, through the same safety pipeline. A three-way baseline distinguishes *you* changed it from *the server* changed it from *both did* — and a conflict is never resolved for you.
+- **Upload one file, without a scan** — right-click a file in the Explorer (or its editor tab) and pick **Upload to Server**. When you already know which file you changed, there is no reason to compare the whole mirror against the server first. On a folder, **Upload Changed Files in This Folder** sends what differs there and leaves identical files alone. Multi-selection works, and everything still travels through the pipeline below.
 - **Production-safety save pipeline**, in order on every `Ctrl+S`:
-  1. **Conflict check** — did the file change on the server since you opened it? (Overwrite / Diff / Cancel)
+  1. **Conflict check** — did the file change on the server since you opened it?
   2. **Automatic backup** — the current server version is downloaded to local storage *before* it is overwritten. Backup failure blocks the save by default.
-  3. **Confirmation** — optional dialog per save; **always** shown for `wp-config.php` and `.htaccess`.
+  3. **Confirmation** — one dialog, not a chain of them: the full remote path, the size, how many lines differ from the server copy, and whether the backup succeeded. **Always** shown for `wp-config.php` and `.htaccess`, for a file that changed on the server, and when a backup failed — even with confirmations turned off. Set `confirm.style` to `modal` for VS Code’s own dialog instead.
   4. Upload, then **verify** the size on the server.
 - **Local preview before you push** — **Start Local Preview** runs a real WordPress site on your machine with the pulled theme active, so an AI’s change can be looked at before production sees it. It needs only a PHP binary: WordPress is downloaded once, the database is SQLite, and the server is PHP’s built-in one. The theme is linked, so edits show on reload.
 - **Copy Production Data for Preview** — the server dumps its own database over SSH, and the extension imports it into a MariaDB instance it runs itself, so the preview shows the real content with the real plugins. Production is only read; media keeps loading from the live host instead of being downloaded.
@@ -91,6 +92,7 @@ Day-to-day actions live under the **Remote Code Companion** category in the Comm
 | Settings | One screen for the connection, credentials, sync scope, excludes, editor-wide options — and for exporting/importing the config, resetting the preview, or disabling the remote |
 | Pull from Server… | Copy a subtree (a theme, a plugin) into this folder as ordinary local files |
 | Push Changes… | Send locally edited files to the server, each through the full save pipeline |
+| Upload to Server | Right-click a file (Explorer, editor tab, or editor) to send exactly that file — no sync scan first. A folder sends only what differs |
 | Sync Status | Per-file state: in sync, needs push, needs pull, or conflicted |
 | Start / Stop / Open Local Preview | Run the pulled theme in a throwaway local WordPress and open it in the browser |
 | Copy Production Data for Preview | Dump the live database over SSH and import it locally, so the preview matches the real site |
@@ -113,6 +115,7 @@ The editor-wide values below are ordinary VS Code settings, so they can also be 
 | Setting | Default | Meaning |
 |---|---|---|
 | `remoteCodeCompanion.confirmOnSave` | `true` | Ask before every upload (per-remote override available in `.rcc/config.json`) |
+| `remoteCodeCompanion.confirm.style` | `panel` | `panel`: a styled confirmation showing the whole remote path, the size and the line delta. `modal`: VS Code’s own window-blocking dialog |
 | `remoteCodeCompanion.conflictCheck` | `true` | Detect server-side changes since the file was opened |
 | `remoteCodeCompanion.backup.enabled` | `true` | Back up the server version before overwrite/delete |
 | `remoteCodeCompanion.backup.required` | `true` | A failed backup blocks the save (asks first) |

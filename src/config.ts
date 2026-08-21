@@ -9,6 +9,12 @@ function cfg(): vscode.WorkspaceConfiguration {
 
 export const config = {
   confirmOnSave: (): boolean => cfg().get<boolean>('confirmOnSave', true),
+  /**
+   * 'panel' is the styled dialog: it shows the whole remote path, the size and
+   * how much changed. 'modal' is VS Code's own window-blocking box, for anyone
+   * who would rather not have a tab open for a confirmation.
+   */
+  confirmStyle: (): 'panel' | 'modal' => cfg().get<'panel' | 'modal'>('confirm.style', 'panel'),
   conflictCheck: (): boolean => cfg().get<boolean>('conflictCheck', true),
   backupEnabled: (): boolean => cfg().get<boolean>('backup.enabled', true),
   backupRequired: (): boolean => cfg().get<boolean>('backup.required', true),

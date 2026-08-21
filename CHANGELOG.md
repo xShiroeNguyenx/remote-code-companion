@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.5.0
+
+**Send one file, and see what you are sending.** Two changes to the moment a file leaves for production.
+
+- **Upload to Server** on the right-click menu of a file — in the Explorer, on the editor tab, or inside the editor. When you already know which file you changed, comparing the whole mirror against the server first is a wait for an answer you had before you started; this asks the server about that one file and uploads it. Multi-selection works, and so does **Upload Changed Files in This Folder** on a directory, which sends what differs there and leaves byte-identical files alone.
+- Nothing about the safety pipeline is skipped — only the scan. Backup, conflict check, confirmation, upload and size verification all still run, and the sync baseline still advances only for a file the pipeline reported as verified.
+- A file the sync state calls conflicted is no longer silently relabelled to get it through. **Upload to Server** and **Keep mine** now push it as what it is, and the dialog says so: *"changed on the server since you opened it — uploading discards that change."* The decision is still the user's; it is just no longer a separate dialog.
+- A file the server no longer has, or one that exists there but was never pulled, is now named as such before it is overwritten instead of failing or overwriting quietly.
+- **The confirmation dialog was rebuilt.** VS Code's own modal cannot be styled and truncates a long remote path to one ellipsised line — precisely the line that answers *am I about to overwrite the right file?* The new dialog shows the whole path, the file size against the size it replaces, **how many lines differ from the server copy**, and the state of the backup, with the server name, host and protocol in the header. `Enter` uploads, `Esc` cancels, and closing the tab counts as cancelling — never as consent.
+- The line delta is free: the pre-save backup already downloads the server copy, so the comparison costs no extra transfer. Binary files are left out of it rather than guessed at.
+- **One dialog per save, not a chain of them.** A server-side change, a failed backup and a critical file used to be three modals in a row, which is how people learn to click through without reading. They are now rows inside the single question, and any of them still forces the dialog to appear even with confirmations turned off.
+- A multi-file or folder upload is confirmed **once**, listing every file. The pipeline then only stops again for files where something is actually wrong — a conflict, a critical file, a failed backup.
+- **"Stop asking for this remote"** is a checkbox in the dialog; it writes the per-remote override into `.rcc/config.json`, because "stop asking about this site" is not "stop asking about every site". It is deliberately absent whenever the dialog is up because something is risky: silencing a warning must not be a side effect of answering it.
+- `remoteCodeCompanion.confirm.style` switches back to the native modal for anyone who would rather not have a tab open for a confirmation. That path also gained the full remote path and the same facts.
+- The dialog escapes everything it renders, and its script is nonce-gated under a `default-src 'none'` policy — a file name is attacker-controlled often enough in a pulled plugin.
+
 ## 0.4.0
 
 **First public release**, on both the VS Code Marketplace and Open VSX. 0.1.0 to 0.3.0 were internal builds, kept below

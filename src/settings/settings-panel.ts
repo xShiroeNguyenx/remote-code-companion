@@ -36,6 +36,13 @@ interface EditorSetting {
  */
 const EDITOR_SETTINGS: EditorSetting[] = [
   { key: 'confirmOnSave', label: 'Confirm before every upload', type: 'boolean' },
+  {
+    key: 'confirm.style',
+    label: 'How that confirmation looks',
+    type: 'enum',
+    options: ['panel', 'modal'],
+    hint: 'panel: a styled tab with the full remote path, the size and how many lines differ. modal: VS Code own dialog, which blocks the window but shows one line.'
+  },
   { key: 'conflictCheck', label: 'Check for server-side changes before overwriting', type: 'boolean' },
   { key: 'backup.enabled', label: 'Back up the server file before overwriting it', type: 'boolean' },
   { key: 'backup.required', label: 'A failed backup blocks the save', type: 'boolean' },

@@ -165,6 +165,40 @@ async function main() {
     assert.match(html, new RegExp(`id="${id}"`), `${id} button missing from the settings panel`);
   }
 
+  // The upload confirmation is the last thing between an editor buffer and a
+  // production server, so its template must render for a real request — and
+  // dismissing it must read as a cancel, never as consent.
+  const { UploadDialog } = require(path.join(process.cwd(), 'out', 'ui', 'upload-dialog.js'));
+  vscode.__answer.dialog = undefined; // the user closes the panel
+  const dismissed = await new UploadDialog().ask({
+    profileName: 'Prod',
+    host: 'example.com',
+    protocolLabel: 'FTP',
+    origin: 'Upload to Server',
+    targets: [
+      {
+        remotePath: '/public_html/wp-config.php',
+        fileName: 'wp-config.php',
+        size: 2048,
+        serverSize: 1900,
+        delta: { added: 3, removed: 1 },
+        created: false,
+        critical: true
+      }
+    ],
+    facts: [{ kind: 'warn', text: 'Critical file' }],
+    canDiff: true
+  });
+  assert.strictEqual(dismissed.answer, 'cancel', 'closing the confirmation must not upload');
+  const confirm = registry.webviewPanels.find((p) => p.viewType === 'remoteCodeCompanion.uploadConfirm');
+  assert.ok(confirm, 'the confirmation should be a webview panel');
+  assert.match(confirm.webview.html, /Content-Security-Policy/, 'the dialog must set a CSP');
+  assert.match(confirm.webview.html, /nonce-/, 'its script must be nonce-gated');
+  assert.match(confirm.webview.html, /wp-config.php/, 'the file name should be rendered');
+  assert.match(confirm.webview.html, /public_html/, 'the full remote path should be rendered');
+  assert.match(confirm.webview.html, /id="upload"/, 'the confirm button should be rendered');
+  vscode.__answer.dialog = undefined;
+
   // Edit Remote is gone; the Settings screen replaced it.
   assert.ok(!registered.has('remoteCodeCompanion.editRemote'), 'editRemote should no longer exist');
 

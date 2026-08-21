@@ -1,14 +1,12 @@
 import * as vscode from 'vscode';
-import { config as settings } from '../config';
 import { formatError, Logger } from '../core/logger';
-import { isPhpFile, LintProblem, lintPhpFiles } from '../php/php-lint';
-import { findPhp } from '../php/php-runtime';
 import { normalizeRemotePath } from '../core/remote-path';
 import { remoteSnapshotUri } from '../fs/uri';
 import { pickRemote } from '../profiles/remote-commands';
 import { RemoteConfigStore } from '../profiles/remote-config-store';
 import { RemoteConfig } from '../profiles/types';
 import { localPathFor } from './manifest';
+import { gateOnPhpSyntax, reportPushResult } from './push-support';
 import { PullCandidate, SyncEngine } from './sync-engine';
 import { CONFLICTED, FileStatus, PUSHABLE, SyncState } from './types';
 
@@ -17,10 +15,6 @@ export interface SyncCommandDeps {
   engine: SyncEngine;
   logger: Logger;
 }
-
-/** Newline inside a modal detail. */
-const DIALOG_NEWLINE = `
-`;
 
 /** Above either threshold, a pull is worth confirming — see the dialog for why. */
 const LARGE_PULL_FILES = 150;
@@ -101,78 +95,6 @@ async function diffLocalWithServer(
     local,
     `Server ↔ Local: ${status.localRelPath}`
   );
-}
-
-/**
- * Refuse to upload PHP that cannot be parsed. A syntax error does not degrade a
- * WordPress site, it blanks every page of it, so this is the one class of
- * mistake worth stopping a push over.
- *
- * Returns the files that may proceed. When PHP is missing the push continues:
- * a machine without PHP is a reason to skip the check, not to block work.
- */
-async function gateOnPhpSyntax(
-  store: RemoteConfigStore,
-  config: RemoteConfig,
-  targets: FileStatus[],
-  logger: Logger
-): Promise<FileStatus[] | undefined> {
-  if (!settings.lintPhpBeforePush()) {
-    return targets;
-  }
-  const phpTargets = targets.filter((t) => isPhpFile(t.localRelPath));
-  if (phpTargets.length === 0) {
-    return targets;
-  }
-  const folder = store.folderFor(config.id);
-  if (!folder) {
-    return targets;
-  }
-  const runtime = await findPhp(settings.phpPath(), logger);
-  if (!runtime) {
-    logger.warn(`[php] no PHP found on this machine — syntax check skipped for ${phpTargets.length} file(s)`);
-    return targets;
-  }
-
-  const problems: LintProblem[] = await vscode.window.withProgress(
-    { location: vscode.ProgressLocation.Notification, title: `Checking PHP syntax (${phpTargets.length} file(s))...` },
-    () =>
-      lintPhpFiles(
-        runtime,
-        phpTargets.map((t) => ({
-          localPath: localPathFor(folder.uri.fsPath, t.localRelPath),
-          label: t.localRelPath
-        }))
-      )
-  );
-  if (problems.length === 0) {
-    return targets;
-  }
-
-  const broken = new Set(problems.map((p) => p.file));
-  const rest = targets.filter((t) => !broken.has(t.localRelPath));
-  const detail = problems
-    .map((p) => `${p.file}${p.line ? ':' + p.line : ''} — ${p.message}`)
-    .join(DIALOG_NEWLINE);
-
-  const pushRest = `Push the other ${rest.length} file(s)`;
-  const answer = await vscode.window.showErrorMessage(
-    `${problems.length} file(s) have PHP syntax errors and were not uploaded.`,
-    {
-      modal: true,
-      detail: [detail, 'A parse error makes every page of the site blank, so these are held back. Fix them and push again.'].join(
-        DIALOG_NEWLINE + DIALOG_NEWLINE
-      )
-    },
-    ...(rest.length > 0 ? [pushRest] : [])
-  );
-  for (const problem of problems) {
-    logger.error(`[php] ${problem.file}${problem.line ? ':' + problem.line : ''} ${problem.message}`);
-  }
-  if (rest.length > 0 && answer === pushRest) {
-    return rest;
-  }
-  return undefined;
 }
 
 export function registerSyncCommands(deps: SyncCommandDeps): vscode.Disposable[] {
@@ -363,7 +285,13 @@ export function registerSyncCommands(deps: SyncCommandDeps): vscode.Disposable[]
 
         if (pushable.length === 0) {
           const extra = conflicted.length > 0 ? ` ${conflicted.length} file(s) need conflict resolution first.` : '';
-          void vscode.window.showInformationMessage(`Nothing to push to "${config.name}".${extra}`);
+          // A new folder outside every synced subtree is invisible here by design:
+          // the extension never scans the whole workspace. Say so, since "nothing
+          // to push" is otherwise indistinguishable from a bug.
+          void vscode.window.showInformationMessage(
+            `Nothing to push to "${config.name}".${extra}` +
+              ' If you added files outside the synced subtrees, add their path under Synced subtrees in Settings first.'
+          );
           return;
         }
 
@@ -390,27 +318,8 @@ export function registerSyncCommands(deps: SyncCommandDeps): vscode.Disposable[]
           return;
         }
 
-        const result = await engine.push(config, allowed);
-        const pushed = result.outcomes.filter((o) => o.outcome === 'pushed').length;
-        const cancelled = result.outcomes.filter((o) => o.outcome === 'cancelled').length;
-        const failed = result.outcomes.filter((o) => o.outcome === 'failed');
-
-        for (const failure of failed) {
-          logger.error(`push failed for ${failure.remotePath}: ${failure.detail ?? ''}`);
-        }
-        const parts = [`${pushed} pushed`];
-        if (cancelled > 0) {
-          parts.push(`${cancelled} cancelled (still pending)`);
-        }
-        if (failed.length > 0) {
-          parts.push(`${failed.length} failed — see the output log`);
-        }
-        const message = `Push to "${config.name}": ${parts.join(', ')}.`;
-        if (failed.length > 0) {
-          void vscode.window.showWarningMessage(message);
-        } else {
-          void vscode.window.showInformationMessage(message);
-        }
+        const result = await engine.push(config, allowed, { origin: 'Push Changes' });
+        reportPushResult(config.name, result, logger);
       });
     }),
 
@@ -517,8 +426,12 @@ async function fileActions(
       await diffLocalWithServer(store, config, status);
       break;
     case 'push':
+      await engine.push(config, [status], { origin: 'Sync Status' });
+      break;
     case 'keep':
-      await engine.push(config, [{ ...status, state: 'localChanged' }]);
+      // Forced on purpose: the file is conflicted, and the dialog says so
+      // rather than the state being quietly rewritten to a pushable one.
+      await engine.push(config, [status], { force: true, origin: 'Keep mine — overwrite the server' });
       break;
     case 'take':
       await engine.takeServer(config, status);
@@ -558,7 +471,7 @@ async function resolveOne(
       // Reviewing is not resolving: leave it conflicted and let the user come back.
       return true;
     case 'keep':
-      await engine.push(config, [{ ...status, state: 'localChanged' }]);
+      await engine.push(config, [status], { force: true, origin: 'Resolve conflict — keep mine' });
       return true;
     case 'take':
       await engine.takeServer(config, status);

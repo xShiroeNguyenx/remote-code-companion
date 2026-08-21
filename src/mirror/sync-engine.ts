@@ -7,12 +7,14 @@ import { ConnectionManager, ManagedConnection } from '../connection/connection-m
 import { RemoteFileEntry } from '../connection/types';
 import { isConnectionFailure, isDataConnectionError, RccError } from '../core/errors';
 import { matchesAnyGlob } from '../core/glob';
+import { dirnameRemote } from '../core/remote-path';
 import { formatError, Logger } from '../core/logger';
 import { FileStateTracker } from '../fs/file-state-tracker';
 import { rccUri } from '../fs/uri';
 import { RemoteConfigStore } from '../profiles/remote-config-store';
 import { RemoteConfig } from '../profiles/types';
 import { detectConflict } from '../save/conflict-detector';
+import { SavePipeline } from '../save/save-pipeline';
 import { classify } from './classify';
 import {
   emptyManifest,
@@ -30,8 +32,27 @@ export interface SyncEngineDeps {
   manager: ConnectionManager;
   tracker: FileStateTracker;
   logger: Logger;
+  /**
+   * The pipeline every push writes through. Optional only so a test can wire a
+   * narrower stack; when present, a push can tell the confirmation dialog why
+   * it is running instead of leaving it to guess.
+   */
+  pipeline?: SavePipeline;
   /** Fired when the pending count may have changed. */
   onPendingChanged?(profileId: string, pending: number): void;
+}
+
+export interface PushOptions {
+  /**
+   * Push a file the sync state calls conflicted. Only ever set from an action
+   * where the user named the file themselves — the dialog then carries the
+   * warning, so the decision is still theirs, just not a separate question.
+   */
+  force?: boolean;
+  /** Shown in the confirmation: "Push · 2 of 7", "Right-click upload". */
+  origin?: string;
+  /** The user already confirmed this exact list; do not ask per file. */
+  preConfirmed?: boolean;
 }
 
 export interface PullCandidate {
@@ -264,54 +285,149 @@ export class SyncEngine {
 
   // ------------------------------------------------------------------- status
 
+  /** One tracked file: the full 3-way comparison against its baseline. */
+  private async statusOfTracked(
+    conn: ManagedConnection,
+    config: RemoteConfig,
+    entry: SyncEntry
+  ): Promise<FileStatus> {
+    const localBytes = await this.readLocal(config, entry.localRelPath);
+    const localSha = localBytes ? sha256(localBytes) : undefined;
+    const localChanged = localSha !== undefined && localSha !== entry.baseSha256;
+    const remoteEntry = await this.statRemote(conn, entry.remotePath);
+
+    const remote: SideRemote = {
+      exists: remoteEntry !== undefined,
+      size: remoteEntry?.size,
+      mtimeMs: remoteEntry?.mtimeMs,
+      mtimeSource: remoteEntry?.mtimeSource
+    };
+    if (this.needsRemoteHash(entry, remoteEntry, localChanged)) {
+      try {
+        remote.sha256 = sha256(await conn.readFile(entry.remotePath));
+      } catch (err) {
+        this.deps.logger.warn(`hashing ${entry.remotePath} failed: ${formatError(err)}`);
+      }
+    }
+
+    const result = classify(
+      {
+        sha256: entry.baseSha256,
+        size: entry.baseSize,
+        mtimeMs: entry.baseRemoteMtimeMs,
+        mtimeSource: entry.baseMtimeSource
+      },
+      { exists: localBytes !== undefined, sha256: localSha },
+      remote
+    );
+    return { ...result, remotePath: entry.remotePath, localRelPath: entry.localRelPath };
+  }
+
+  /** No baseline, so only "does it already exist remotely?" matters. */
+  private async statusOfUntracked(
+    conn: ManagedConnection,
+    config: RemoteConfig,
+    localRelPath: string
+  ): Promise<FileStatus> {
+    const target = remotePathFor(config.remoteRoot, localRelPath);
+    const localBytes = await this.readLocal(config, localRelPath);
+    const remoteEntry = await this.statRemote(conn, target);
+    const result = classify(undefined, { exists: localBytes !== undefined }, { exists: remoteEntry !== undefined });
+    return { ...result, remotePath: target, localRelPath };
+  }
+
   async status(config: RemoteConfig): Promise<FileStatus[]> {
     const manifest = await this.manifest(config);
     const conn = this.deps.manager.getConnection(config.id);
     const out: FileStatus[] = [];
 
     for (const entry of Object.values(manifest.entries)) {
-      const localBytes = await this.readLocal(config, entry.localRelPath);
-      const localSha = localBytes ? sha256(localBytes) : undefined;
-      const localChanged = localSha !== undefined && localSha !== entry.baseSha256;
-      const remoteEntry = await this.statRemote(conn, entry.remotePath);
-
-      const remote: SideRemote = {
-        exists: remoteEntry !== undefined,
-        size: remoteEntry?.size,
-        mtimeMs: remoteEntry?.mtimeMs,
-        mtimeSource: remoteEntry?.mtimeSource
-      };
-      if (this.needsRemoteHash(entry, remoteEntry, localChanged)) {
-        try {
-          remote.sha256 = sha256(await conn.readFile(entry.remotePath));
-        } catch (err) {
-          this.deps.logger.warn(`hashing ${entry.remotePath} failed: ${formatError(err)}`);
-        }
-      }
-
-      const result = classify(
-        {
-          sha256: entry.baseSha256,
-          size: entry.baseSize,
-          mtimeMs: entry.baseRemoteMtimeMs,
-          mtimeSource: entry.baseMtimeSource
-        },
-        { exists: localBytes !== undefined, sha256: localSha },
-        remote
-      );
-      out.push({ ...result, remotePath: entry.remotePath, localRelPath: entry.localRelPath });
+      out.push(await this.statusOfTracked(conn, config, entry));
     }
-
-    // New local files: no baseline, so only "does it already exist remotely?" matters.
     for (const rel of await this.untrackedLocalFiles(config, manifest)) {
-      const target = remotePathFor(config.remoteRoot, rel);
-      const remoteEntry = await this.statRemote(conn, target);
-      const result = classify(undefined, { exists: true }, { exists: remoteEntry !== undefined });
-      out.push({ ...result, remotePath: target, localRelPath: rel });
+      out.push(await this.statusOfUntracked(conn, config, rel));
     }
 
     await this.recomputePending(config, out);
     return out;
+  }
+
+  /**
+   * The state of named files only — one stat each, nothing else scanned. This is
+   * what "upload this file" needs: the user already knows which file they
+   * changed, and a full status pass costs a round trip per tracked file, which
+   * on a mirrored theme is hundreds of them.
+   *
+   * The pending count is deliberately left alone: it describes the whole remote,
+   * and a partial answer must not be allowed to overwrite it.
+   */
+  async statusOfPaths(config: RemoteConfig, localRelPaths: string[]): Promise<FileStatus[]> {
+    const manifest = await this.manifest(config);
+    const conn = this.deps.manager.getConnection(config.id);
+    const byRel = new Map<string, SyncEntry>();
+    for (const entry of Object.values(manifest.entries)) {
+      byRel.set(entry.localRelPath, entry);
+    }
+
+    const out: FileStatus[] = [];
+    for (const rel of localRelPaths) {
+      const entry = byRel.get(rel);
+      out.push(
+        entry ? await this.statusOfTracked(conn, config, entry) : await this.statusOfUntracked(conn, config, rel)
+      );
+    }
+    return out;
+  }
+
+  /**
+   * Every file under one local directory, tracked or not — the candidate list
+   * for "upload this folder". Unlike `status()` this does not care whether the
+   * directory is a declared root: the user pointed at it, which is the same
+   * kind of instruction.
+   */
+  async statusUnder(config: RemoteConfig, localRelDir: string): Promise<FileStatus[]> {
+    const manifest = await this.manifest(config);
+    const prefix = localRelDir ? localRelDir.replace(/\/+$/, '') + '/' : '';
+    const paths = new Set<string>();
+    for (const entry of Object.values(manifest.entries)) {
+      if (!prefix || entry.localRelPath.startsWith(prefix)) {
+        paths.add(entry.localRelPath);
+      }
+    }
+    for (const rel of await this.localFilesUnder(config, localRelDir)) {
+      paths.add(rel);
+    }
+    return this.statusOfPaths(config, [...paths].sort((a, b) => a.localeCompare(b)));
+  }
+
+  /** Local files under one directory, honouring the remote's exclude globs. */
+  private async localFilesUnder(config: RemoteConfig, localRelDir: string): Promise<string[]> {
+    const folder = this.folderPath(config);
+    if (!folder) {
+      return [];
+    }
+    const found: string[] = [];
+    const walk = async (relDir: string): Promise<void> => {
+      let names: fs.Dirent[];
+      try {
+        names = await fs.promises.readdir(localPathFor(folder, relDir), { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const dirent of names) {
+        const rel = relDir ? `${relDir}/${dirent.name}` : dirent.name;
+        if (rel === '.rcc' || matchesAnyGlob(rel, config.excludes)) {
+          continue;
+        }
+        if (dirent.isDirectory()) {
+          await walk(rel);
+        } else if (dirent.isFile()) {
+          found.push(rel);
+        }
+      }
+    };
+    await walk(localRelDir.replace(/\/+$/, ''));
+    return found;
   }
 
   // ------------------------------------------------------------------ pending
@@ -597,13 +713,14 @@ export class SyncEngine {
    * check, backup, confirmation and verification all still apply. The baseline
    * moves only for files the pipeline completed.
    */
-  async push(config: RemoteConfig, targets: FileStatus[]): Promise<PushResult> {
+  async push(config: RemoteConfig, targets: FileStatus[], options?: PushOptions): Promise<PushResult> {
     const manifest = await this.manifest(config);
     const conn = this.deps.manager.getConnection(config.id);
+    const folder = this.folderPath(config);
     const outcomes: PushResult['outcomes'] = [];
 
-    for (const target of targets) {
-      if (CONFLICTED.includes(target.state)) {
+    for (const [index, target] of targets.entries()) {
+      if (CONFLICTED.includes(target.state) && !options?.force) {
         outcomes.push({ remotePath: target.remotePath, outcome: 'skipped', detail: 'conflicted — resolve first' });
         continue;
       }
@@ -615,6 +732,38 @@ export class SyncEngine {
 
       const uri = rccUri(config.id, target.remotePath);
       const existing = manifest.entries[target.remotePath];
+
+      // Tell the pipeline what this push already knows. Without it the dialog
+      // would either repeat a question the caller just asked, or stay silent
+      // about a risk only the sync state can see.
+      if (this.deps.pipeline) {
+        this.deps.pipeline.declareIntent(uri, {
+          origin: options?.origin
+            ? targets.length > 1
+              ? `${options.origin} · ${index + 1} of ${targets.length}`
+              : options.origin
+            : undefined,
+          confirmed: options?.preConfirmed === true,
+          warnings: this.pushWarnings(target),
+          localUri: folder ? vscode.Uri.file(localPathFor(folder, target.localRelPath)) : undefined
+        });
+      }
+
+      // A file created locally may sit in a directory that does not exist on the
+      // server yet — a new plugin folder, for instance. Neither FTP nor SFTP
+      // creates parents on write, so the upload would fail with a bare "no such
+      // file". Both clients make mkdir recursive and idempotent, so asking for it
+      // costs one command and is safe when the directory is already there.
+      if (!existing) {
+        const parent = dirnameRemote(target.remotePath);
+        try {
+          await conn.mkdir(parent);
+        } catch (err) {
+          // Not fatal on its own: the directory may exist and the server may still
+          // report an error for the attempt. Let the upload be the real verdict.
+          this.deps.logger.debug(`[push] mkdir ${parent}: ${formatError(err)}`);
+        }
+      }
       if (existing) {
         // Seed the pipeline's baseline so it can still catch a server-side change
         // that happened between our status check and this upload.
@@ -633,6 +782,8 @@ export class SyncEngine {
       } catch (err) {
         const message = formatError(err);
         const cancelled = /cancelled/i.test(message);
+        // The write may have failed before the pipeline read the intent.
+        this.deps.pipeline?.dropIntent(uri);
         outcomes.push({
           remotePath: target.remotePath,
           outcome: cancelled ? 'cancelled' : 'failed',
@@ -659,6 +810,29 @@ export class SyncEngine {
     await this.saveManifest(config, manifest);
     await this.recomputePending(config);
     return { outcomes };
+  }
+
+  /**
+   * What the confirmation must say about this file beyond the pipeline's own
+   * checks. Only states that a plain push would have refused produce a warning:
+   * the point is that a forced upload still tells the truth about what it
+   * overwrites.
+   */
+  private pushWarnings(target: FileStatus): string[] {
+    switch (target.state) {
+      case 'createdBoth':
+        return [
+          'A file already exists at this path on the server and was never pulled, so there is no baseline to compare — uploading replaces it.'
+        ];
+      case 'bothChanged':
+        // With conflictCheck on, the pipeline states this itself from the
+        // baseline; saying it twice in one dialog reads as a bug.
+        return settings.conflictCheck() ? [] : [`Conflicted: ${target.reason}. Uploading discards the server version.`];
+      case 'remoteMissing':
+        return ['This file was deleted on the server since the last sync — uploading re-creates it.'];
+      default:
+        return [];
+    }
   }
 
   /** Take the server version for one file, discarding the local copy. */

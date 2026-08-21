@@ -168,13 +168,15 @@ interface BackupEntry {
 2. **Read-only gate** → throw `FileSystemError.NoPermissions('Profile is read-only')`.
 3. Wrap everything in `vscode.window.withProgress` + a **per-URI mutex** (a second `Ctrl+S` queues behind the first).
 4. **Fresh stat** from the server (one network op, reused by steps 5–6). File missing remotely → it's a create: skip 5–6.
-5. **Conflict check** (if enabled and a baseline exists):
+5. **Conflict check** (if enabled and a baseline exists) — a verdict, not a dialog:
    - `sftp` / `mdtm` source → conflict if mtime OR size differs.
    - `listing` source → minute granularity: conflict if size differs OR `|mtimeDelta| > 120s`.
    - `none` → size-only; log "conflict check degraded" once per profile.
-   - On conflict → modal: **Overwrite / Diff with Server / Cancel**. Diff opens `vscode.diff` and cancels the save.
-6. **Backup** (if enabled and file exists): download current server bytes → `BackupManager.write(..., 'pre-save')` → prune. Backup failure is a **hard stop** by default (`backup.required`); modal "Backup failed — save anyway?".
-7. **Confirm** (if enabled): modal `Upload <basename> to <profile.name> (<host>)?` — **always shown** for WordPress critical files (`wp-config.php`, `.htaccess`) regardless of the toggle.
+6. **Backup** (if enabled and file exists): download current server bytes → `BackupManager.write(..., 'pre-save')` → prune. The downloaded bytes are kept for step 7's line delta, so the comparison costs no extra transfer.
+7. **Confirm — one dialog, carrying everything steps 5–6 found.** Rendered as a webview (`ui/upload-dialog*.ts`), or as a native modal when `confirm.style: modal`. It shows the full remote path, the size against the size it replaces, the line delta versus the server copy, and one row per fact: backup saved / backup failed / changed on the server / critical file. Answers are **Upload / Diff with Server / Cancel**; closing the panel is a cancel.
+   - Shown when `confirmOnSave` is on, and **always** — toggle or not — for WordPress critical files (`wp-config.php`, `.htaccess`), a server-side change, a failed backup with `backup.required`, or a warning declared by the caller.
+   - "Stop asking for this remote" is offered **only** when nothing risky is on the dialog, and writes `confirmOnSave: false` into that folder's `.rcc/config.json`.
+   - Callers that already know something (`SyncEngine.push`, the upload commands) declare it with `SavePipeline.declareIntent(uri, …)` before writing: `workspace.fs.writeFile` carries bytes and nothing else, and a second dialog stacked on the first is how a user learns to click through both.
 8. **Upload** via the queued client.
 9. **Verify**: re-stat; assert size matches; on mismatch report "upload may be incomplete — server reports N bytes" with a reference to the backup.
 10. **Refresh baseline** in `FileStateTracker`, invalidate parent listing cache, fire `onDidChangeFile`, status bar flashes "Uploaded ✓".
